@@ -88,3 +88,4 @@ Faça upload de uma imagem
 Escolha a voz do narrador e clique em "Analisar Imagem"
 
 Veja a descrição e ouça o áudio gerado
+
