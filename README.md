@@ -53,68 +53,37 @@ Tudo isso em um **frontend moderno e interativo** com suporte a múltiplas vozes
 
 #### 1️⃣ Clonar o repositório
 ```bash
-#### 2\. **Configurar o Backend (Node.js + AWS SDK)**
+# 2. Configurar o Backend (Node.js + AWS SDK)
 
-1.  Acesse a pasta do backend (raiz do projeto):
-    
+## Acesse a pasta do backend (raiz do projeto):
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd backend   `
+```bash
+cd backend
+```
 
-1.  Instale as dependências do Node.js:
-    
+## Instale as dependências do Node.js:
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   npm install   `
+```bash
+npm install
+```
 
-1.  Copie o arquivo de ambiente de exemplo para criar seu .env:
-    
+## Copie o arquivo de ambiente de exemplo para criar seu `.env`:
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cp .env.example .env   `
+```bash
+cp .env.example .env
+```
 
-1.  Abra o .env e adicione suas credenciais da AWS:
-    
+## Abra o `.env` e adicione suas credenciais da AWS:
+- `AWS_ACCESS_KEY_ID=sua_access_key`
+- `AWS_SECRET_ACCESS_KEY=sua_secret_key`
+- `AWS_REGION=us-east-1`
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   AWS_ACCESS_KEY_ID=sua_access_key  AWS_SECRET_ACCESS_KEY=sua_secret_key  AWS_REGION=us-east-1   `
+⚠️ Nunca commit o `.env` com chaves reais no GitHub.
 
-> ⚠️ Nunca commit o .env com chaves reais no GitHub.
+## Inicie o servidor backend:
 
-1.  Inicie o servidor backend:
-    
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   node server.js   `
+```bash
+node server.js
+```
 
 O backend estará disponível em: [http://localhost:3000](http://localhost:3000)
-
-#### 3\. **Configurar o Frontend**
-
-O frontend já está incluso na pasta public/ do backend. Basta abrir o servidor backend e acessar:
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   http://localhost:3000   `
-
-*   Faça upload da imagem.
-    
-*   Escolha a voz do narrador.
-    
-*   Clique em **“Analisar Imagem”** para gerar a narração.
-    
-
-#### 4\. **Uso do .env em outros computadores**
-
-*   Sempre copie .env.example para .env antes de rodar o projeto:
-    
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cp .env.example .env   `
-
-*   Preencha suas credenciais da AWS no novo .env.
-    
-*   O arquivo .env **não deve** ser enviado ao GitHub.
-    
-
-### 📝 Observações
-
-*   O projeto utiliza **AWS Rekognition** para análise de imagens e **AWS Polly** para gerar narração em áudio.
-    
-*   Upload de imagens e escolha da voz são feitos diretamente no frontend.
-    
-*   Certifique-se de que sua **chave AWS tenha permissões para Rekognition e Polly**.
-    
-*   Não compartilhe suas credenciais em repositórios públicos.
