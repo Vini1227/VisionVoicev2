@@ -11,8 +11,11 @@
   "dependencies": {
     "@aws-sdk/client-polly": "^3.978.0",
     "@aws-sdk/client-rekognition": "^3.978.0",
+    "@aws-sdk/client-translate": "^3.978.0",
+    "@vitalets/google-translate-api": "^9.2.1",
     "aws-sdk": "^2.1693.0",
     "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "multer": "^2.0.2"
   },

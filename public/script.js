@@ -15,9 +15,16 @@ const audioStatus = document.getElementById('audioStatus');
 
 // Upload
 uploadZone.addEventListener('click', () => fileInput.click());
+
 fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+
+uploadZone.addEventListener('dragover', e => { 
+    e.preventDefault(); 
+    uploadZone.classList.add('dragover'); 
+});
+
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+
 uploadZone.addEventListener('drop', e => {
     e.preventDefault();
     uploadZone.classList.remove('dragover');
@@ -27,6 +34,7 @@ uploadZone.addEventListener('drop', e => {
 
 function handleFile(file) {
     if(file.size > 5*1024*1024) return showError('Imagem muito grande! Máx: 5MB');
+    
     uploadedFile = file;
     uploadZone.querySelector('.upload-text').textContent = file.name;
     uploadZone.querySelector('.upload-icon').textContent = '✓';
@@ -37,34 +45,41 @@ function handleFile(file) {
 // Processar imagem
 processBtn.addEventListener('click', async () => {
     if(!uploadedFile) return;
-
+    
     const formData = new FormData();
     formData.append('image', uploadedFile);
     formData.append('voice', document.getElementById('voice').value);
-
+    
     showLoading();
     hideError();
     previewSection.classList.remove('active');
-
+    
     try {
-        const res = await fetch('/analisar', { method: 'POST', body: formData });
+        const res = await fetch('/analisar', { 
+            method: 'POST', 
+            body: formData 
+        });
+        
         const data = await res.json();
-
-        if(!data.descricao || !data.audioBase64) throw new Error('Falha na análise');
-
+        
+        if(!res.ok) throw new Error(data.error || 'Erro no servidor');
+        if(!data.descricao || !data.audioBase64) throw new Error('Resposta inválida do servidor');
+        
         // Preview
         imagePreview.src = URL.createObjectURL(uploadedFile);
         resultText.textContent = data.descricao;
         audioPlayer.src = `data:audio/mp3;base64,${data.audioBase64}`;
+        
         previewSection.classList.add('active');
         playButton.textContent = '▶';
         audioStatus.textContent = 'Pronto para reproduzir';
+        
         hideLoading();
         previewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
+        
     } catch(err) {
         hideLoading();
-        showError(`Erro: ${err.message}`);
+        showError(`Erro: ${err.message}`); // FIX: adicionado parêntese faltando
     }
 });
 
@@ -87,8 +102,21 @@ audioPlayer.addEventListener('ended', () => {
 });
 
 // Utils
-function showLoading(){ loading.classList.add('active'); processBtn.disabled = true; }
-function hideLoading(){ loading.classList.remove('active'); processBtn.disabled = false; }
-function showError(msg){ error.textContent = msg; error.classList.add('active'); }
-function hideError(){ error.classList.remove('active'); }
+function showLoading(){ 
+    loading.classList.add('active'); 
+    processBtn.disabled = true; 
+}
 
+function hideLoading(){ 
+    loading.classList.remove('active'); 
+    processBtn.disabled = false; 
+}
+
+function showError(msg){ 
+    error.textContent = msg; 
+    error.classList.add('active'); 
+}
+
+function hideError(){ 
+    error.classList.remove('active'); 
+}

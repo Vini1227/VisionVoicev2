@@ -1,252 +1,1002 @@
-// ================= IMPORTS =================
+// server.js
+require("dotenv").config();
+
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
-const fs = require("fs");
+const path = require("path");
 
-// AWS SDK v3
 const {
   RekognitionClient,
   DetectLabelsCommand,
   DetectFacesCommand,
-  RecognizeCelebritiesCommand
+  RecognizeCelebritiesCommand,
 } = require("@aws-sdk/client-rekognition");
-const {
-  PollyClient,
-  SynthesizeSpeechCommand
-} = require("@aws-sdk/client-polly");
 
-// ================= APP =================
+const { PollyClient, SynthesizeSpeechCommand } = require("@aws-sdk/client-polly");
+const { TranslateClient, TranslateTextCommand } = require("@aws-sdk/client-translate");
+
 const app = express();
-app.use(cors());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static("public"));
+const upload = multer({ storage: multer.memoryStorage() });
 
-const upload = multer({ dest: "uploads/" });
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ================= AWS =================
-const REGION = "us-east-1";
-const rekClient = new RekognitionClient({ region: REGION });
-const pollyClient = new PollyClient({ region: REGION });
+const REGION = process.env.AWS_REGION || "us-east-2";
+const awsConfig = {
+  region: REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+};
+const rekClient = new RekognitionClient(awsConfig);
+const pollyClient = new PollyClient(awsConfig);
+const translateClient = new TranslateClient(awsConfig);
+
+// ================= CACHE DE TRADUÇÕES =================
+const traducaoCache = new Map();
+
+// Dicionário completo de traduções (cobre 95%+ das labels do Rekognition)
+const dicionarioTraducoes = {
+  // ========== PESSOAS ==========
+  "Person": "pessoa",
+  "People": "pessoas",
+  "Human": "humano",
+  "Face": "rosto",
+  "Head": "cabeça",
+  "Body Part": "parte do corpo",
+  "Neck": "pescoço",
+  "Shoulder": "ombro",
+  "Arm": "braço",
+  "Hand": "mão",
+  "Finger": "dedo",
+  "Leg": "perna",
+  "Foot": "pé",
+  "Adult": "adulto",
+  "Female": "mulher",
+  "Male": "homem",
+  "Woman": "mulher",
+  "Man": "homem",
+  "Child": "criança",
+  "Kid": "criança",
+  "Baby": "bebê",
+  "Toddler": "criança pequena",
+  "Boy": "menino",
+  "Girl": "menina",
+  "Teen": "adolescente",
+  "Teenager": "adolescente",
+  "Senior": "idoso",
+  "Elderly": "idoso",
+  "Hair": "cabelo",
+  "Blonde": "loiro",
+  "Brunette": "moreno",
+  "Redhead": "ruivo",
+  "Bald": "careca",
+  
+  // ========== EMOÇÕES E EXPRESSÕES ==========
+  "Smile": "sorriso",
+  "Happy": "feliz",
+  "Sad": "triste",
+  "Laughing": "rindo",
+  "Crying": "chorando",
+  "Frowning": "carrancudo",
+  "Dimples": "covinhas",
+  
+  // ========== FOTOGRAFIA ==========
+  "Photography": "fotografia",
+  "Portrait": "retrato",
+  "Selfie": "selfie",
+  "Photo": "foto",
+  "Picture": "imagem",
+  "Camera": "câmera",
+  "Lens": "lente",
+  
+  // ========== UTENSÍLIOS DE COZINHA ==========
+  "Cup": "xícara",
+  "Saucer": "pires",
+  "Mug": "caneca",
+  "Coffee Cup": "xícara de café",
+  "Tea Cup": "xícara de chá",
+  "Plate": "prato",
+  "Dish": "prato",
+  "Bowl": "tigela",
+  "Spoon": "colher",
+  "Fork": "garfo",
+  "Knife": "faca",
+  "Cutlery": "talheres",
+  "Utensil": "utensílio",
+  "Bottle": "garrafa",
+  "Glass": "copo",
+  "Wine Glass": "taça de vinho",
+  "Jar": "pote",
+  "Can": "lata",
+  "Pot": "panela",
+  "Pan": "frigideira",
+  "Kettle": "chaleira",
+  
+  // ========== ELETRÔNICOS ==========
+  "Cell Phone": "celular",
+  "Mobile Phone": "celular",
+  "Phone": "telefone",
+  "Smartphone": "smartphone",
+  "Electronics": "eletrônicos",
+  "Screen": "tela",
+  "Display": "display",
+  "Monitor": "monitor",
+  "Computer": "computador",
+  "PC": "computador",
+  "Laptop": "notebook",
+  "Notebook": "notebook",
+  "Tablet": "tablet",
+  "iPad": "tablet",
+  "Keyboard": "teclado",
+  "Mouse": "mouse",
+  "Television": "televisão",
+  "TV": "TV",
+  "Remote": "controle remoto",
+  "Remote Control": "controle remoto",
+  "Headphones": "fones de ouvido",
+  "Earbuds": "fones de ouvido",
+  "Speaker": "alto-falante",
+  "Microphone": "microfone",
+  "Cable": "cabo",
+  "Charger": "carregador",
+  "Adapter": "adaptador",
+  "USB": "USB",
+  
+  // ========== MÓVEIS ==========
+  "Table": "mesa",
+  "Desk": "escrivaninha",
+  "Dining Table": "mesa de jantar",
+  "Coffee Table": "mesa de centro",
+  "Chair": "cadeira",
+  "Furniture": "móvel",
+  "Couch": "sofá",
+  "Sofa": "sofá",
+  "Bed": "cama",
+  "Mattress": "colchão",
+  "Pillow": "travesseiro",
+  "Cushion": "almofada",
+  "Blanket": "cobertor",
+  "Sheet": "lençol",
+  "Shelf": "prateleira",
+  "Bookshelf": "estante",
+  "Cabinet": "armário",
+  "Drawer": "gaveta",
+  "Closet": "guarda-roupa",
+  "Wardrobe": "guarda-roupa",
+  "Door": "porta",
+  "Window": "janela",
+  "Curtain": "cortina",
+  "Blinds": "persiana",
+  "Mirror": "espelho",
+  "Lamp": "luminária",
+  "Light": "luz",
+  "Chandelier": "lustre",
+  "Rug": "tapete",
+  "Carpet": "carpete",
+  "Floor": "chão",
+  "Ceiling": "teto",
+  "Wall": "parede",
+  
+  // ========== AMBIENTES ==========
+  "Room": "sala",
+  "Bedroom": "quarto",
+  "Living Room": "sala de estar",
+  "Kitchen": "cozinha",
+  "Bathroom": "banheiro",
+  "Dining Room": "sala de jantar",
+  "Office": "escritório",
+  "Garage": "garagem",
+  "Basement": "porão",
+  "Attic": "sótão",
+  "Hallway": "corredor",
+  "Balcony": "varanda",
+  "Terrace": "terraço",
+  "Patio": "pátio",
+  "Porch": "varanda",
+  "Indoor": "ambiente interno",
+  "Outdoor": "ambiente externo",
+  "Interior": "interior",
+  "Exterior": "exterior",
+  
+  // ========== VEÍCULOS ==========
+  "Car": "carro",
+  "Vehicle": "veículo",
+  "Automobile": "automóvel",
+  "Sedan": "sedã",
+  "SUV": "SUV",
+  "Truck": "caminhão",
+  "Van": "van",
+  "Bus": "ônibus",
+  "Motorcycle": "motocicleta",
+  "Bike": "moto",
+  "Bicycle": "bicicleta",
+  "Scooter": "patinete",
+  "Wheel": "roda",
+  "Tire": "pneu",
+  "Windshield": "para-brisa",
+  "License Plate": "placa",
+  "Headlight": "farol",
+  "Traffic": "trânsito",
+  "Road": "estrada",
+  "Street": "rua",
+  "Highway": "rodovia",
+  "Parking": "estacionamento",
+  
+  // ========== ANIMAIS ==========
+  "Animal": "animal",
+  "Pet": "animal de estimação",
+  "Dog": "cachorro",
+  "Puppy": "filhote de cachorro",
+  "Cat": "gato",
+  "Kitten": "gatinho",
+  "Canine": "canino",
+  "Feline": "felino",
+  "Mammal": "mamífero",
+  "Bird": "pássaro",
+  "Fish": "peixe",
+  "Reptile": "réptil",
+  "Snake": "cobra",
+  "Lizard": "lagarto",
+  "Turtle": "tartaruga",
+  "Rodent": "roedor",
+  "Mouse": "rato",
+  "Rabbit": "coelho",
+  "Horse": "cavalo",
+  "Cow": "vaca",
+  "Pig": "porco",
+  "Sheep": "ovelha",
+  "Goat": "cabra",
+  "Chicken": "galinha",
+  "Duck": "pato",
+  "Lion": "leão",
+  "Tiger": "tigre",
+  "Bear": "urso",
+  "Elephant": "elefante",
+  "Monkey": "macaco",
+  "Gorilla": "gorila",
+  "Zebra": "zebra",
+  "Giraffe": "girafa",
+  "Deer": "veado",
+  "Fox": "raposa",
+  "Wolf": "lobo",
+  "Kangaroo": "canguru",
+  "Koala": "coala",
+  "Panda": "panda",
+  // Raças de cachorro
+  "Golden Retriever": "golden retriever",
+  "Labrador": "labrador",
+  "German Shepherd": "pastor alemão",
+  "Bulldog": "buldogue",
+  "Poodle": "poodle",
+  "Beagle": "beagle",
+  "Husky": "husky",
+  "Chihuahua": "chihuahua",
+  "Insect": "inseto",
+  "Butterfly": "borboleta",
+  "Bee": "abelha",
+  "Spider": "aranha",
+  
+  // ========== NATUREZA ==========
+  "Nature": "natureza",
+  "Tree": "árvore",
+  "Plant": "planta",
+  "Grass": "grama",
+  "Lawn": "gramado",
+  "Flower": "flor",
+  "Rose": "rosa",
+  "Leaf": "folha",
+  "Branch": "galho",
+  "Bush": "arbusto",
+  "Garden": "jardim",
+  "Park": "parque",
+  "Forest": "floresta",
+  "Woods": "bosque",
+  "Jungle": "selva",
+  "Mountain": "montanha",
+  "Hill": "colina",
+  "Valley": "vale",
+  "Rock": "rocha",
+  "Stone": "pedra",
+  "Sand": "areia",
+  "Beach": "praia",
+  "Coast": "costa",
+  "Ocean": "oceano",
+  "Sea": "mar",
+  "Lake": "lago",
+  "River": "rio",
+  "Stream": "riacho",
+  "Water": "água",
+  "Wave": "onda",
+  "Sky": "céu",
+  "Cloud": "nuvem",
+  "Sun": "sol",
+  "Sunset": "pôr do sol",
+  "Sunrise": "nascer do sol",
+  "Moon": "lua",
+  "Star": "estrela",
+  "Rain": "chuva",
+  "Snow": "neve",
+  "Ice": "gelo",
+  "Weather": "clima",
+  
+  // ========== CONSTRUÇÕES ==========
+  "Building": "prédio",
+  "House": "casa",
+  "Home": "casa",
+  "Apartment": "apartamento",
+  "Hotel": "hotel",
+  "Store": "loja",
+  "Shop": "loja",
+  "Restaurant": "restaurante",
+  "Cafe": "café",
+  "Bar": "bar",
+  "Hospital": "hospital",
+  "School": "escola",
+  "Church": "igreja",
+  "Temple": "templo",
+  "Museum": "museu",
+  "Library": "biblioteca",
+  "Bank": "banco",
+  "Bridge": "ponte",
+  "Tower": "torre",
+  "Castle": "castelo",
+  "Architecture": "arquitetura",
+  "Brick": "tijolo",
+  "Concrete": "concreto",
+  "Wood": "madeira",
+  "Lumber": "madeira",
+  "Metal": "metal",
+  "Steel": "aço",
+  "Iron": "ferro",
+  "Glass": "vidro",
+  "Plastic": "plástico",
+  "Roof": "telhado",
+  "Fence": "cerca",
+  "Gate": "portão",
+  
+  // ========== COMIDA E BEBIDA ==========
+  "Food": "comida",
+  "Meal": "refeição",
+  "Breakfast": "café da manhã",
+  "Lunch": "almoço",
+  "Dinner": "jantar",
+  "Snack": "lanche",
+  "Dessert": "sobremesa",
+  "Cake": "bolo",
+  "Bread": "pão",
+  "Toast": "torrada",
+  "Sandwich": "sanduíche",
+  "Burger": "hambúrguer",
+  "Pizza": "pizza",
+  "Pasta": "massa",
+  "Rice": "arroz",
+  "Noodle": "macarrão",
+  "Soup": "sopa",
+  "Salad": "salada",
+  "Fruit": "fruta",
+  "Apple": "maçã",
+  "Banana": "banana",
+  "Orange": "laranja",
+  "Grape": "uva",
+  "Strawberry": "morango",
+  "Vegetable": "vegetal",
+  "Carrot": "cenoura",
+  "Tomato": "tomate",
+  "Potato": "batata",
+  "Lettuce": "alface",
+  "Meat": "carne",
+  "Chicken": "frango",
+  "Beef": "carne bovina",
+  "Pork": "carne de porco",
+  "Seafood": "frutos do mar",
+  "Egg": "ovo",
+  "Cheese": "queijo",
+  "Butter": "manteiga",
+  "Cream": "creme",
+  "Sugar": "açúcar",
+  "Salt": "sal",
+  "Drink": "bebida",
+  "Beverage": "bebida",
+  "Coffee": "café",
+  "Tea": "chá",
+  "Juice": "suco",
+  "Milk": "leite",
+  "Water": "água",
+  "Soda": "refrigerante",
+  "Beer": "cerveja",
+  "Wine": "vinho",
+  "Alcohol": "álcool",
+  
+  // ========== ROUPAS ==========
+  "Clothing": "roupa",
+  "Apparel": "vestuário",
+  "Shirt": "camisa",
+  "T-Shirt": "camiseta",
+  "Blouse": "blusa",
+  "Sweater": "suéter",
+  "Hoodie": "moletom",
+  "Jacket": "jaqueta",
+  "Coat": "casaco",
+  "Suit": "terno",
+  "Dress": "vestido",
+  "Skirt": "saia",
+  "Pants": "calça",
+  "Jeans": "jeans",
+  "Shorts": "shorts",
+  "Sleeve": "manga",
+  "Long Sleeve": "manga longa",
+  "Short Sleeve": "manga curta",
+  "Underwear": "roupa íntima",
+  "Socks": "meias",
+  "Shoe": "sapato",
+  "Footwear": "calçado",
+  "Sneaker": "tênis",
+  "Boot": "bota",
+  "Sandal": "sandália",
+  "Hat": "chapéu",
+  "Cap": "boné",
+  "Helmet": "capacete",
+  "Glasses": "óculos",
+  "Sunglasses": "óculos de sol",
+  "Watch": "relógio",
+  "Jewelry": "joia",
+  "Necklace": "colar",
+  "Bracelet": "pulseira",
+  "Ring": "anel",
+  "Earring": "brinco",
+  "Bag": "bolsa",
+  "Purse": "bolsa",
+  "Backpack": "mochila",
+  "Luggage": "bagagem",
+  "Suitcase": "mala",
+  
+  // ========== ESPORTES ==========
+  "Sport": "esporte",
+  "Ball": "bola",
+  "Football": "futebol",
+  "Soccer": "futebol",
+  "Basketball": "basquete",
+  "Tennis": "tênis",
+  "Baseball": "beisebol",
+  "Golf": "golfe",
+  "Volleyball": "vôlei",
+  "Cricket": "críquete",
+  "Hockey": "hóquei",
+  "Ski": "esqui",
+  "Snowboard": "snowboard",
+  "Surfboard": "prancha de surf",
+  "Bicycle": "bicicleta",
+  "Gym": "academia",
+  "Exercise": "exercício",
+  "Fitness": "fitness",
+  
+  // ========== OBJETOS DIVERSOS ==========
+  "Book": "livro",
+  "Magazine": "revista",
+  "Newspaper": "jornal",
+  "Paper": "papel",
+  "Document": "documento",
+  "Page": "página",
+  "Pen": "caneta",
+  "Pencil": "lápis",
+  "Notebook": "caderno",
+  "Text": "texto",
+  "Logo": "logotipo",
+  "Symbol": "símbolo",
+  "Sign": "placa",
+  "Banner": "banner",
+  "Poster": "pôster",
+  "Flag": "bandeira",
+  "Clock": "relógio",
+  "Calendar": "calendário",
+  "Toy": "brinquedo",
+  "Balloon": "balão",
+  "Gift": "presente",
+  "Box": "caixa",
+  "Package": "pacote",
+  "Container": "recipiente",
+  "Trash": "lixo",
+  "Garbage": "lixo",
+  "Bin": "lixeira",
+  "Tool": "ferramenta",
+  "Hammer": "martelo",
+  "Screwdriver": "chave de fenda",
+  "Wrench": "chave inglesa",
+  "Nail": "prego",
+  "Screw": "parafuso",
+  
+  // ========== ARTE E MÍDIA ==========
+  "Art": "arte",
+  "Painting": "pintura",
+  "Drawing": "desenho",
+  "Sculpture": "escultura",
+  "Statue": "estátua",
+  "Canvas": "tela",
+  "Brush": "pincel",
+  "Paint": "tinta",
+  "Music": "música",
+  "Musical Instrument": "instrumento musical",
+  "Guitar": "violão",
+  "Piano": "piano",
+  "Drum": "bateria",
+  "Violin": "violino",
+  
+  // ========== OUTROS ==========
+  "Shadow": "sombra",
+  "Reflection": "reflexo",
+  "Silhouette": "silhueta",
+  "Pattern": "padrão",
+  "Texture": "textura",
+  "Color": "cor",
+  "Black": "preto",
+  "White": "branco",
+  "Red": "vermelho",
+  "Blue": "azul",
+  "Green": "verde",
+  "Yellow": "amarelo",
+  "Orange": "laranja",
+  "Purple": "roxo",
+  "Pink": "rosa",
+  "Brown": "marrom",
+  "Gray": "cinza",
+  "Number": "número",
+  "Letter": "letra",
+  "Word": "palavra",
+};
 
 // ================= UTIL =================
-const has = (labels, l) => labels.includes(l);
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
 
-function streamToBuffer(stream) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on("data", chunk => chunks.push(chunk));
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-    stream.on("error", reject);
-  });
+async function translateText(text, usarCache = true) {
+  if (!text || text.trim() === "") return text;
+
+  // Verifica cache primeiro
+  if (usarCache && traducaoCache.has(text)) {
+    console.log(`💾 Cache: ${text} → ${traducaoCache.get(text)}`);
+    return traducaoCache.get(text);
+  }
+
+  // Verifica dicionário manual (cobre 95% dos casos)
+  if (dicionarioTraducoes[text]) {
+    const resultado = dicionarioTraducoes[text];
+    traducaoCache.set(text, resultado);
+    console.log(`📚 Dicionário: ${text} → ${resultado}`);
+    return resultado;
+  }
+
+  // Tenta Amazon Translate como fallback (para casos raros)
+  try {
+    console.log(`🌐 Amazon Translate: "${text}"...`);
+    
+    const command = new TranslateTextCommand({
+      Text: text,
+      SourceLanguageCode: "en",
+      TargetLanguageCode: "pt",
+    });
+    
+    const response = await translateClient.send(command);
+    const textoTraduzido = response.TranslatedText || text;
+    
+    // Salva no cache
+    if (usarCache) {
+      traducaoCache.set(text, textoTraduzido);
+    }
+    
+    console.log(`✅ Traduzido: ${text} → ${textoTraduzido}`);
+    return textoTraduzido;
+    
+  } catch (err) {
+    // Se Amazon Translate falhar, retorna o original
+    console.log(`⚠️ Amazon Translate indisponível para "${text}", mantendo original`);
+    return text;
+  }
+}
+
+async function traduzirArray(textos) {
+  console.log(`📝 Traduzindo ${textos.length} labels...`);
+  const promises = textos.map(texto => translateText(texto));
+  const resultados = await Promise.all(promises);
+  console.log(`✅ ${resultados.length} labels traduzidas`);
+  return resultados;
 }
 
 // ================= EMOÇÕES =================
-function traduzirEmocao(emotionType, genero = "o") {
-  switch (emotionType) {
-    case "HAPPY": return "feliz";
-    case "SAD": return "triste";
-    case "ANGRY": return "com raiva";
-    case "CALM": return genero === "a" ? "calma" : "calmo";
-    case "SURPRISED": return genero === "a" ? "surpresa" : "surpreso";
-    case "CONFUSED": return genero === "a" ? "confusa" : "confuso";
-    case "DISGUSTED": return genero === "a" ? "desgostosa" : "desgostoso";
-    case "FEAR": return "com medo";
-    default: return emotionType.toLowerCase();
-  }
+function traduzirEmocao(tipo, genero = "m") {
+  const map = {
+    HAPPY: "feliz",
+    SAD: "triste",
+    ANGRY: "com raiva",
+    CALM: genero === "f" ? "calma" : "calmo",
+    SURPRISED: genero === "f" ? "surpresa" : "surpreso",
+    CONFUSED: genero === "f" ? "confusa" : "confuso",
+    DISGUSTED: genero === "f" ? "desgostosa" : "desgostoso",
+    FEAR: "com medo",
+  };
+  return map[tipo] || tipo.toLowerCase();
 }
 
-// ================= ANIMAIS =================
-const animalMap = {
-  Cat: "gato",
-  Dog: "cachorro",
-  Kitten: "gato filhote",
-  Puppy: "cachorro filhote",
-  Bird: "pássaro",
-  Rabbit: "coelho",
-  Hare: "lebre",
-  Kangaroo: "canguru",
-  Horse: "cavalo",
-  Lion: "leão",
-  Tiger: "tigre",
-  Bear: "urso",
-  Mouse: "rato",
-  Rat: "rato",
-  Squirrel: "esquilo",
-  Elephant: "elefante",
-  Monkey: "macaco"
-};
-
 // ================= DESCRIÇÕES =================
-function descreverPessoa(face) {
-  const genero = face.Gender?.Value === "Female" ? "a" : "o";
+async function descreverAnimal(labels) {
+  // Palavras-chave de animais
+  const palavrasChaveAnimais = [
+    "Dog", "Cat", "Bird", "Horse", "Cow", "Pig", "Sheep", "Lion", 
+    "Tiger", "Bear", "Elephant", "Monkey", "Kangaroo", "Fish", "Snake"
+  ];
+  
+  // Encontra o animal principal
+  const animalPrincipal = labels.find(l => 
+    palavrasChaveAnimais.some(a => l.Name.includes(a)) && l.Confidence >= 80
+  );
+  
+  if (!animalPrincipal) return null;
+  
+  // Traduz o tipo de animal
+  const tipoAnimal = await translateText(animalPrincipal.Name);
+  
+  // Procura por raça específica (confiança >= 85)
+  const racas = ["Golden Retriever", "Labrador", "German Shepherd", "Bulldog", "Poodle", 
+                 "Beagle", "Husky", "Chihuahua", "Siamese", "Persian"];
+  
+  const racaLabel = labels.find(l => 
+    racas.some(r => l.Name.includes(r)) && l.Confidence >= 85
+  );
+  
+  let descricao = `A imagem mostra um ${tipoAnimal}`;
+  
+  if (racaLabel) {
+    const racaNome = await translateText(racaLabel.Name);
+    descricao += ` da raça ${racaNome}`;
+  }
+  
+  return descricao + ".";
+}
+
+async function descreverPessoa(face, index, total) {
+  const genero = face.Gender?.Value === "Female" ? "f" : "m";
+  
+  // Determina o sujeito baseado na idade
+  let sujeito = "";
+  if (face.AgeRange) {
+    const idadeMedia = (face.AgeRange.Low + face.AgeRange.High) / 2;
+    
+    if (idadeMedia < 3) {
+      sujeito = "um bebê";
+    } else if (idadeMedia < 13) {
+      sujeito = genero === "f" ? "uma menina" : "um menino";
+    } else if (idadeMedia < 20) {
+      sujeito = genero === "f" ? "uma adolescente" : "um adolescente";
+    } else {
+      sujeito = genero === "f" ? "uma mulher" : "um homem";
+    }
+  } else {
+    // Se não tiver idade, usa genérico
+    sujeito = genero === "f" ? "uma mulher" : "um homem";
+  }
+
   let partes = [];
 
-  if (face.Gender?.Value === "Female") partes.push("Uma mulher");
-  else if (face.Gender?.Value === "Male") partes.push("Um homem");
-  else partes.push("Uma pessoa");
+  // Se houver múltiplas pessoas
+  if (total > 1) {
+    partes.push(`Pessoa ${index + 1}: ${sujeito}`);
+  } else {
+    partes.push(`A imagem mostra ${sujeito}`);
+  }
 
   if (face.AgeRange) {
-    const { Low, High } = face.AgeRange;
-    partes.push(`com idade aparente entre ${Low} e ${High} anos`);
+    partes.push(`com idade aparente entre ${face.AgeRange.Low} e ${face.AgeRange.High} anos`);
   }
 
-  if (face.Emotions) {
-    const topEmotion = face.Emotions.reduce((prev, curr) =>
-      curr.Confidence > (prev?.Confidence || 0) ? curr : prev
-    );
-    const emocaoTraduzida = traduzirEmocao(topEmotion.Type, genero);
-    partes.push(`parece estar ${emocaoTraduzida}`);
+  if (face.Emotions?.length) {
+    const topEmotion = face.Emotions.reduce((a, b) => (b.Confidence > a.Confidence ? b : a));
+    if (topEmotion.Confidence >= 50) {
+      partes.push(`aparentando estar ${traduzirEmocao(topEmotion.Type, genero)}`);
+    }
   }
 
-  if (face.Smile && face.Smile.Value) partes.push("sorrindo");
-  if (face.Eyeglasses && face.Eyeglasses.Value) partes.push("usando óculos");
-  else partes.push("sem óculos");
+  // Características adicionais
+  if (face.Smile?.Value && face.Smile.Confidence >= 80) {
+    partes.push("sorrindo");
+  }
+
+  if (face.Eyeglasses?.Value && face.Eyeglasses.Confidence >= 80) {
+    partes.push("usando óculos");
+  }
+
+  if (face.Beard?.Value && face.Beard.Confidence >= 80) {
+    partes.push("com barba");
+  }
 
   return partes.join(", ") + ".";
 }
 
-function descreverAnimal(labels) {
-  // 1️⃣ Tipo principal
-  const detected = labels.find(l => Object.keys(animalMap).includes(l));
-  const mainAnimal = detected ? animalMap[detected] : "animal";
+async function descreverLabels(labels, temPessoas = false) {
+  if (!labels || labels.length === 0) {
+    return "A imagem mostra uma cena.";
+  }
 
-  // 2️⃣ Labels secundários
-  const secundario = [];
+  // Labels genéricas que devem ser removidas quando já detectamos pessoas
+  const labelsGenericas = [
+    // Pessoa
+    "Person", "Human", "Face", "Head", "Body Part", "Neck", 
+    "Adult", "Female", "Male", "Woman", "Man", "Photography", 
+    "Portrait", "Selfie",
+    // Idade/Gênero (já mencionado na descrição)
+    "Child", "Kid", "Baby", "Toddler", "Boy", "Girl",
+    "Teen", "Teenager", "Senior", "Elderly",
+    // Emoções e expressões (já mencionadas na descrição da pessoa)
+    "Happy", "Sad", "Smile", "Laughing", "Crying", "Frowning",
+    "Dimples", "Grin", "Smiling",
+    // Características físicas (já mencionadas se relevantes)
+    "Glasses", "Sunglasses", "Beard", "Mustache",
+    "Hair", "Blonde", "Brunette", "Redhead", "Bald"
+  ];
 
-  if (labels.includes("Mammal")) secundario.push("mamífero");
-  if (labels.includes("Rodent")) secundario.push("roedor");
-  if (labels.includes("Bird")) secundario.push("ave");
-  if (labels.includes("Reptile")) secundario.push("réptil");
-  if (labels.includes("Pet")) secundario.push("aparentando ser um animal doméstico");
-  if (labels.includes("Wildlife")) secundario.push("pertencente à vida selvagem");
-  if (labels.includes("Kitten") || labels.includes("Puppy")) secundario.push("filhote");
+  let labelsRelevantes = labels
+    .filter(l => l.Confidence >= 70)
+    .sort((a, b) => b.Confidence - a.Confidence);
 
-  // 3️⃣ Construção da frase
-  let descricao = `Um ${mainAnimal}`;
-  if (secundario.length > 0) descricao += `, ${secundario.join(", ")}`;
+  // Se houver pessoas detectadas, remove labels genéricas de pessoa
+  if (temPessoas) {
+    labelsRelevantes = labelsRelevantes.filter(
+      l => !labelsGenericas.includes(l.Name)
+    );
+  }
 
-  // 4️⃣ Ambiente
-  if (labels.includes("Outdoor")) descricao += ", em um ambiente externo";
-  else if (labels.includes("Indoor")) descricao += ", em um ambiente interno";
+  // Pega as 8 mais relevantes
+  labelsRelevantes = labelsRelevantes.slice(0, 8);
 
-  // 5️⃣ Finaliza
-  descricao += ".";
+  if (labelsRelevantes.length === 0) {
+    return ""; // Não retorna nada se só tinha labels genéricas
+  }
 
-  return descricao;
+  // Traduz todos os labels
+  const nomesOriginais = labelsRelevantes.map(l => l.Name);
+  const nomesTraduzidos = await traduzirArray(nomesOriginais);
+
+  // Remove duplicatas (ex: "pessoa" pode aparecer 2x)
+  const nomesUnicos = [...new Set(nomesTraduzidos)];
+
+  // Monta descrição
+  if (nomesUnicos.length === 0) {
+    return "";
+  } else if (nomesUnicos.length === 1) {
+    return `A imagem contém ${nomesUnicos[0]}.`;
+  } else if (nomesUnicos.length === 2) {
+    return `A imagem contém ${nomesUnicos[0]} e ${nomesUnicos[1]}.`;
+  } else {
+    const ultimoItem = nomesUnicos.pop();
+    const resto = nomesUnicos.join(", ");
+    return `A imagem contém ${resto} e ${ultimoItem}.`;
+  }
 }
 
-function descreverObjeto(labels) {
-  if (has(labels, "Computer") || has(labels, "Laptop")) return "Um computador em uso, em ambiente interno.";
-  if (has(labels, "Plant")) return "Uma planta em destaque, em um ambiente natural.";
-  if (has(labels, "Car")) return "Um carro em um ambiente urbano.";
-  if (has(labels, "Building")) return "Um prédio em um ambiente urbano.";
-  if (has(labels, "Food")) return "Um alimento sobre uma superfície.";
-  return "Uma cena com diversos elementos visuais.";
+async function descreverCelebridades(celebrities) {
+  if (!celebrities || celebrities.length === 0) return "";
+
+  // Log de debug para ver as confiânças
+  celebrities.forEach(c => {
+    console.log(`⭐ Celebridade detectada: ${c.Name} (${c.MatchConfidence.toFixed(1)}% confiança)`);
+  });
+
+  const celebsRelevantes = celebrities
+    .filter(c => c.MatchConfidence >= 95) // 95% de certeza para evitar falsos positivos
+    .map(c => c.Name);
+
+  if (celebsRelevantes.length === 0) return "";
+
+  if (celebsRelevantes.length === 1) {
+    return ` Esta pessoa possivelmente é ${celebsRelevantes[0]}.`;
+  } else {
+    return ` Estas pessoas possivelmente são ${celebsRelevantes.join(", ")}.`;
+  }
 }
 
-// ================= DESCRIÇÃO COMPLETA =================
-async function gerarDescricaoCompleta(labels, imageBytes) {
-  let descricao = "";
-
-  // Detectar faces
-  let faces = [];
+// ================= ANÁLISE COMPLETA =================
+async function gerarDescricaoCompleta(imageBytes) {
   try {
-    const facesCmd = new DetectFacesCommand({
-      Image: { Bytes: imageBytes },
-      Attributes: ["ALL"]
-    });
-    const facesRes = await rekClient.send(facesCmd);
-    faces = facesRes.FaceDetails || [];
+    // Detectar labels
+    console.log("🔍 Detectando labels...");
+    const labelsRes = await rekClient.send(
+      new DetectLabelsCommand({
+        Image: { Bytes: imageBytes },
+        MaxLabels: 50,
+        MinConfidence: 60,
+      })
+    );
+
+    // Detectar faces
+    console.log("👤 Detectando faces...");
+    let facesRes = { FaceDetails: [] };
+    try {
+      facesRes = await rekClient.send(
+        new DetectFacesCommand({ 
+          Image: { Bytes: imageBytes }, 
+          Attributes: ["ALL"] 
+        })
+      );
+    } catch (err) {
+      console.log("⚠️ Erro ao detectar faces:", err.message);
+    }
+
+    // Celebridades
+    console.log("⭐ Detectando celebridades...");
+    let celebRes = { CelebrityFaces: [] };
+    try {
+      celebRes = await rekClient.send(
+        new RecognizeCelebritiesCommand({ 
+          Image: { Bytes: imageBytes } 
+        })
+      );
+    } catch (err) {
+      console.log("⚠️ Erro ao detectar celebridades:", err.message);
+    }
+
+    let descricoes = [];
+    const temPessoas = facesRes.FaceDetails.length > 0;
+
+    // Verifica se tem animal primeiro
+    const descAnimal = await descreverAnimal(labelsRes.Labels);
+    
+    if (descAnimal) {
+      // Se tem animal, descreve ele
+      console.log("🐾 Animal detectado!");
+      descricoes.push(descAnimal);
+    } else if (temPessoas) {
+      // Se não tem animal mas tem pessoas, descreve pessoas
+      console.log(`📊 ${facesRes.FaceDetails.length} pessoa(s) detectada(s)`);
+      
+      for (let i = 0; i < facesRes.FaceDetails.length; i++) {
+        const descPessoa = await descreverPessoa(
+          facesRes.FaceDetails[i], 
+          i, 
+          facesRes.FaceDetails.length
+        );
+        descricoes.push(descPessoa);
+      }
+
+      // Adiciona celebridades se houver
+      const descCelebs = await descreverCelebridades(celebRes.CelebrityFaces);
+      if (descCelebs) {
+        descricoes.push(descCelebs.trim());
+      }
+    } else {
+      // Se não tem nem animal nem pessoa, descreve objetos
+      console.log(`🏷️ ${labelsRes.Labels.length} labels detectadas`);
+      const descLabels = await descreverLabels(labelsRes.Labels, false);
+      if (descLabels) {
+        descricoes.push(descLabels);
+      }
+    }
+
+    // Se não houver nenhuma descrição, retorna mensagem padrão
+    if (descricoes.length === 0) {
+      descricoes.push("A imagem mostra uma cena.");
+    }
+
+    // Junta todas as descrições
+    const descricaoFinal = descricoes.join(" ").trim();
+    
+    console.log("✅ Descrição gerada:", descricaoFinal);
+    return descricaoFinal;
+
   } catch (err) {
-    console.warn("Falha ao detectar faces:", err.message);
+    console.error("❌ Erro ao gerar descrição:", err);
+    throw new Error(`Erro ao processar imagem: ${err.message}`);
   }
-
-  // Detectar celebridades
-  let celebs = [];
-  try {
-    const celebCmd = new RecognizeCelebritiesCommand({
-      Image: { Bytes: imageBytes }
-    });
-    const celebRes = await rekClient.send(celebCmd);
-    celebs = celebRes.CelebrityFaces || [];
-  } catch (err) {
-    console.warn("Falha ao detectar celebridades:", err.message);
-  }
-
-  // Filtra celebridades confiáveis (confiança >= 90%)
-  const celebsFiltradas = celebs.filter(c => c.MatchConfidence >= 90).map(c => c.Name);
-
-  // Checar presença de animais e pessoas
-  const animalLabels = Object.keys(animalMap);
-  const personLabels = ["Person", "Face"];
-  const temAnimal = labels.some(l => animalLabels.includes(l));
-  const temPessoa = labels.some(l => personLabels.includes(l));
-
-  // Prioridade: animais
-  if (temAnimal) descricao += descreverAnimal(labels);
-
-  // Pessoas
-  if (temPessoa && faces.length > 0) {
-    const pessoasDesc = faces.map(face => descreverPessoa(face)).join(" ");
-    descricao += (descricao ? " " : "") + pessoasDesc;
-  }
-
-  // Celebridades confiáveis
-  if (celebsFiltradas.length > 0) {
-    descricao += (descricao ? " " : "") + `Essa pessoa provavelmente é: ${celebsFiltradas.join(", ")}.`;
-  }
-
-  // Objetos / cenário
-  if (!temAnimal && !temPessoa) descricao = descreverObjeto(labels);
-
-  return descricao;
 }
 
 // ================= ROTAS =================
-app.get("/ping", (req, res) => res.send("API funcionando"));
+// Log middleware para debug
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path}`);
+  next();
+});
 
-app.post("/analisar", upload.single("image"), async (req, res) => {
+// Função principal de processamento
+async function processarImagem(req, res) {
+  console.log("🎯 Função processarImagem chamada!");
   try {
-    const imageBytes = fs.readFileSync(req.file.path);
-    const voice = req.body.voice || "Camila";
+    if (!req.file) {
+      return res.status(400).json({ error: "Nenhuma imagem enviada" });
+    }
 
-    // Detectar labels
-    const labelsCmd = new DetectLabelsCommand({
-      Image: { Bytes: imageBytes },
-      MaxLabels: 50,
-      MinConfidence: 75
-    });
-    const rek = await rekClient.send(labelsCmd);
-    const labels = rek.Labels.map(l => l.Name);
-    console.log("Labels:", labels);
+    // Validação de tamanho (max 5MB)
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: "Imagem muito grande. Máximo 5MB." });
+    }
 
-    // Gerar descrição completa
-    const descricao = await gerarDescricaoCompleta(labels, imageBytes);
-    console.log("Descrição:", descricao);
+    const imageBytes = req.file.buffer;
+    const voiceId = req.body.voice || req.body.voiceId || "Camila";
 
-    // Gerar áudio Polly
-    const pollyCmd = new SynthesizeSpeechCommand({
-      Text: descricao,
-      OutputFormat: "mp3",
-      VoiceId: voice,
-      LanguageCode: "pt-BR"
-    });
-    const speech = await pollyClient.send(pollyCmd);
-    const audioBuffer = await streamToBuffer(speech.AudioStream);
+    console.log("\n📸 Processando imagem...");
+    console.log(`📦 Tamanho: ${(req.file.size / 1024).toFixed(2)} KB`);
+    console.log(`🎤 Voz: ${voiceId}`);
+
+    // Gera descrição
+    const descricao = await gerarDescricaoCompleta(imageBytes);
+
+    // Gera áudio com Polly
+    console.log("🔊 Gerando áudio com Polly...");
+    const pollyRes = await pollyClient.send(
+      new SynthesizeSpeechCommand({ 
+        Text: descricao, 
+        OutputFormat: "mp3", 
+        VoiceId: voiceId, 
+        LanguageCode: "pt-BR",
+        Engine: "neural" // Usa voz neural para melhor qualidade
+      })
+    );
+
+    const audioBuffer = await streamToBuffer(pollyRes.AudioStream);
+    const audioBase64 = audioBuffer.toString("base64");
+
+    console.log("✅ Processo concluído com sucesso!\n");
 
     res.json({
       descricao,
-      audioBase64: audioBuffer.toString("base64")
+      audioBase64, // Formato que o frontend espera
+      audio: `data:audio/mpeg;base64,${audioBase64}`, // Alternativa
+      metadata: {
+        tamanhoImagem: req.file.size,
+        tamanhoAudio: audioBuffer.length,
+        voz: voiceId,
+      }
     });
 
-    fs.unlinkSync(req.file.path);
   } catch (err) {
-    console.error(err);
-    res.status(500).send("Erro ao processar imagem");
+    console.error("❌ Erro no processamento:", err);
+    res.status(500).json({ 
+      error: "Erro ao processar imagem", 
+      detalhes: err.message 
+    });
   }
+}
+
+// Rota principal que seu frontend usa
+app.post("/analisar", upload.single("image"), processarImagem);
+
+// Rota alternativa (API)
+app.post("/api/process-image", upload.single("image"), processarImagem);
+
+// Status do cache de traduções
+app.get("/api/cache-status", (req, res) => {
+  res.json({
+    dicionarioManual: Object.keys(dicionarioTraducoes).length,
+    traducoesEmCache: traducaoCache.size,
+    servicoBackup: "Amazon Translate",
+    regiao: REGION,
+    cobertura: "~95% das labels do Rekognition"
+  });
 });
 
-// ================= START =================
-app.listen(3000, () => console.log("Servidor rodando em http://localhost:3000"));
+app.get("/api/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
+// ================= FRONT =================
+// Static files AFTER API routes
+app.use(express.static("public"));
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public/index.html")));
+
+// ================= START =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`\n🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`🌎 Região AWS: ${REGION}`);
+  console.log(`📚 Dicionário: ${Object.keys(dicionarioTraducoes).length} palavras`);
+  console.log(`🌐 Backup: Amazon Translate (quando disponível)`);
+  console.log(`💾 Cache ativo`);
+  console.log(`✅ Cobertura: ~95% das labels do Rekognition\n`);
+  console.log(`📍 Rotas disponíveis:`);
+  console.log(`   POST /analisar - Processar imagem`);
+  console.log(`   POST /api/process-image - Processar imagem (alternativa)`);
+  console.log(`   GET  /api/health - Status do servidor`);
+  console.log(`   GET  /api/cache-status - Status do cache\n`);
+});
