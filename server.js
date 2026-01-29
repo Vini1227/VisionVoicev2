@@ -16,6 +16,14 @@ const {
 const { PollyClient, SynthesizeSpeechCommand } = require("@aws-sdk/client-polly");
 const { TranslateClient, TranslateTextCommand } = require("@aws-sdk/client-translate");
 
+// ================= GROQ (IA) =================
+const Groq = require('groq-sdk');
+
+// Cliente Groq
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY || '',
+});
+
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -624,6 +632,75 @@ function traduzirEmocao(tipo, genero = "m") {
   return map[tipo] || tipo.toLowerCase();
 }
 
+// ================= MELHORAR DESCRIÇÃO COM IA =================
+async function melhorarDescricaoComIA(descricaoBruta, labels = []) {
+  // Se não tiver API key, retorna descrição original
+  if (!process.env.GROQ_API_KEY) {
+    console.log("⚠️ GROQ_API_KEY não configurada, usando descrição bruta");
+    return descricaoBruta;
+  }
+
+  try {
+    console.log("🤖 Melhorando descrição com IA...");
+    console.log("📝 Descrição original:", descricaoBruta);
+    
+    // Prepara contexto dos labels mais relevantes
+    const labelsContext = labels
+      .filter(l => l.Confidence >= 70)
+      .slice(0, 15)
+      .map(l => `${l.Name} (${l.Confidence.toFixed(0)}%)`)
+      .join(", ");
+
+    const prompt = `Você é um assistente que melhora descrições de imagens para pessoas com deficiência visual.
+
+DESCRIÇÃO ATUAL (gerada automaticamente):
+"${descricaoBruta}"
+
+LABELS DETECTADOS: ${labelsContext}
+
+TAREFA:
+Reescreva a descrição de forma mais natural e fluida, seguindo estas regras:
+
+1. **Elimine redundâncias**: Se mencionar "celular", não precisa repetir "eletrônico" ou "telefone"
+2. **Organize por importância**: Mencione primeiro o elemento principal, depois o contexto
+3. **Seja específico quando possível**: 
+   - Se tem iPhone → "um iPhone" (não "celular da marca Apple")
+   - Se tem Golden Retriever → "um golden retriever" (não "um cachorro de raça")
+4. **Una informações relacionadas**:
+   - ❌ "Uma pessoa. Ela está sorrindo. Ela tem 30-40 anos"
+   - ✅ "Uma pessoa de 30 a 40 anos, sorrindo"
+5. **Evite jargão técnico**: use português natural e acessível
+6. **Mantenha entre 1-3 frases**: seja conciso mas completo
+
+IMPORTANTE: 
+- Retorne APENAS a descrição melhorada, sem explicações ou comentários
+- Use português brasileiro natural
+- Mantenha o tom descritivo e neutro
+
+DESCRIÇÃO MELHORADA:`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "llama-3.3-70b-versatile", // Modelo mais poderoso da Groq
+      temperature: 0.3, // Baixa criatividade = mais fiel aos fatos
+      max_tokens: 200, // Suficiente para 2-3 frases
+      top_p: 0.9,
+    });
+
+    const descricaoMelhorada = completion.choices[0]?.message?.content?.trim() || descricaoBruta;
+    
+    console.log("✅ Descrição melhorada:", descricaoMelhorada);
+    console.log(`⚡ Tokens usados: ${completion.usage?.total_tokens || 'N/A'}`);
+    
+    return descricaoMelhorada;
+
+  } catch (err) {
+    console.error("❌ Erro ao melhorar com IA:", err.message);
+    // Em caso de erro, retorna descrição original
+    return descricaoBruta;
+  }
+}
+
 // ================= DESCRIÇÕES =================
 async function descreverAnimal(labels) {
   // Palavras-chave de animais
@@ -882,10 +959,14 @@ async function gerarDescricaoCompleta(imageBytes) {
       descricoes.push("A imagem mostra uma cena.");
     }
 
-    // Junta todas as descrições
-    const descricaoFinal = descricoes.join(" ").trim();
+    // Junta todas as descrições (descrição bruta)
+    const descricaoBruta = descricoes.join(" ").trim();
+    console.log("📝 Descrição bruta:", descricaoBruta);
+
+    // 🆕 MELHORA A DESCRIÇÃO COM IA
+    const descricaoFinal = await melhorarDescricaoComIA(descricaoBruta, labelsRes.Labels);
     
-    console.log("✅ Descrição gerada:", descricaoFinal);
+    console.log("✅ Descrição final:", descricaoFinal);
     return descricaoFinal;
 
   } catch (err) {
@@ -978,6 +1059,19 @@ app.get("/api/cache-status", (req, res) => {
   });
 });
 
+// 🆕 Status da IA
+app.get("/api/ia-status", (req, res) => {
+  res.json({
+    iaAtivada: !!process.env.GROQ_API_KEY,
+    modelo: "llama-3.3-70b-versatile",
+    provider: "Groq",
+    status: process.env.GROQ_API_KEY ? "🟢 Ativo" : "🔴 Desativado",
+    descricao: process.env.GROQ_API_KEY 
+      ? "IA ativa - descrições serão melhoradas automaticamente" 
+      : "IA desativada - usando descrições brutas"
+  });
+});
+
 app.get("/api/health", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
 // ================= FRONT =================
@@ -993,10 +1087,12 @@ app.listen(PORT, () => {
   console.log(`📚 Dicionário: ${Object.keys(dicionarioTraducoes).length} palavras`);
   console.log(`🌐 Backup: Amazon Translate (quando disponível)`);
   console.log(`💾 Cache ativo`);
-  console.log(`✅ Cobertura: ~95% das labels do Rekognition\n`);
+  console.log(`✅ Cobertura: ~95% das labels do Rekognition`);
+  console.log(`🤖 IA (Groq): ${process.env.GROQ_API_KEY ? '🟢 Ativo' : '🔴 Desativado'}\n`);
   console.log(`📍 Rotas disponíveis:`);
   console.log(`   POST /analisar - Processar imagem`);
   console.log(`   POST /api/process-image - Processar imagem (alternativa)`);
   console.log(`   GET  /api/health - Status do servidor`);
-  console.log(`   GET  /api/cache-status - Status do cache\n`);
+  console.log(`   GET  /api/cache-status - Status do cache`);
+  console.log(`   GET  /api/ia-status - Status da IA 🆕\n`);
 });
