@@ -53,39 +53,68 @@ Tudo isso em um **frontend moderno e interativo** com suporte a múltiplas vozes
 
 #### 1️⃣ Clonar o repositório
 ```bash
-git clone https://github.com/vini1227/VisionVoicev2.git
-cd VisionVoicev2
-2️⃣ Instalar dependências
-bash
-Copiar código
-npm install
-3️⃣ Configurar variáveis de ambiente
-Copie o arquivo de exemplo:
+#### 2\. **Configurar o Backend (Node.js + AWS SDK)**
 
-bash
-Copiar código
-cp .env.example .env
-Abra .env e adicione suas credenciais da AWS:
+1.  Acesse a pasta do backend (raiz do projeto):
+    
 
-ini
-Copiar código
-AWS_ACCESS_KEY_ID=SEU_ACCESS_KEY
-AWS_SECRET_ACCESS_KEY=SUA_SECRET_KEY
-AWS_REGION=us-east-1
-⚠️ Nunca commit suas chaves reais! Apenas o .env.example deve estar no repositório.
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cd backend   `
 
-4️⃣ Iniciar o servidor
-bash
-Copiar código
-node server.js
-O backend estará rodando em: http://localhost:3000
+1.  Instale as dependências do Node.js:
+    
 
-5️⃣ Acessar o frontend
-Abra o navegador em http://localhost:3000
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   npm install   `
 
-Faça upload de uma imagem
+1.  Copie o arquivo de ambiente de exemplo para criar seu .env:
+    
 
-Escolha a voz do narrador e clique em "Analisar Imagem"
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cp .env.example .env   `
 
-Veja a descrição e ouça o áudio gerado
+1.  Abra o .env e adicione suas credenciais da AWS:
+    
 
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   AWS_ACCESS_KEY_ID=sua_access_key  AWS_SECRET_ACCESS_KEY=sua_secret_key  AWS_REGION=us-east-1   `
+
+> ⚠️ Nunca commit o .env com chaves reais no GitHub.
+
+1.  Inicie o servidor backend:
+    
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   node server.js   `
+
+O backend estará disponível em: [http://localhost:3000](http://localhost:3000)
+
+#### 3\. **Configurar o Frontend**
+
+O frontend já está incluso na pasta public/ do backend. Basta abrir o servidor backend e acessar:
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   http://localhost:3000   `
+
+*   Faça upload da imagem.
+    
+*   Escolha a voz do narrador.
+    
+*   Clique em **“Analisar Imagem”** para gerar a narração.
+    
+
+#### 4\. **Uso do .env em outros computadores**
+
+*   Sempre copie .env.example para .env antes de rodar o projeto:
+    
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   cp .env.example .env   `
+
+*   Preencha suas credenciais da AWS no novo .env.
+    
+*   O arquivo .env **não deve** ser enviado ao GitHub.
+    
+
+### 📝 Observações
+
+*   O projeto utiliza **AWS Rekognition** para análise de imagens e **AWS Polly** para gerar narração em áudio.
+    
+*   Upload de imagens e escolha da voz são feitos diretamente no frontend.
+    
+*   Certifique-se de que sua **chave AWS tenha permissões para Rekognition e Polly**.
+    
+*   Não compartilhe suas credenciais em repositórios públicos.
